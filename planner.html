@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Day of Greatness — Weekly Planner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header>
+  <h1 class="wordmark">Day of <em>Greatness</em></h1>
+  <span class="week-label" id="weekLabel"></span>
+  <span class="holiday-status" id="holidayStatus">Loading holidays...</span>
+</header>
+
+<main>
+  <div class="week-grid" id="weekGrid"></div>
+</main>
+
+
+<div class="modal-backdrop" id="addModal">
+  <div class="modal">
+    <p class="modal-day" id="addModalDay"></p>
+    <h2 class="modal-title" id="addModalTitle">Add an event</h2>
+    <div class="form-group">
+      <label for="eventInput">Event name</label>
+      <input type="text" id="eventInput" placeholder="e.g. Study group, Doctor visit…" maxlength="80" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="addCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="addSaveBtn">Save event</button>
+    </div>
+  </div>
+</div>
+
+
+<div class="modal-backdrop" id="deleteModal">
+  <div class="modal delete-modal">
+    <h2 class="modal-title" id="deleteModalTitle">Remove this event?</h2>
+    <span class="delete-event-name" id="deleteEventName"></span>
+    <p style="font-size:0.85rem;color:#666;margin-bottom:1.5rem;">This can't be undone.</p>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="deleteConfirmBtn">Delete</button>
+      <button class="btn btn-ghost" id="deleteCancelBtn">Keep it</button>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span>Day of Greatness — The Weekly Planner</span>
+  <span>Holiday data: <a href="https://date.nager.at" target="_blank">Nager.Date Public Holidays API</a></span>
+  <span>Events are stored locally in your browser</span>
+</footer>
+
+<script>
+
+  var DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  // figure out what monday is for this week
+  function getMonday() {
+    var now = new Date();
+    var day = now.getDay();
+    if (day == 0) day = 7;
+    var monday = new Date(now);
+    monday.setDate(now.getDate() - day + 1);
+    monday.setHours(0,0,0,0);
+    return monday;
+  }
+
+  var monday = getMonday();
+
+  // turns a date into a string for use as a key
+  function dateKey(date) {
+    var y = date.getFullYear();
+    var m = String(date.getMonth() + 1).padStart(2, '0');
+    var d = String(date.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  }
+
+  function formatShort(date) {
+    return date.getDate() + ' ' + MONTHS[date.getMonth()].slice(0,3);
+  }
+
+  // load saved events from localstorage, or start with empty object
+  var events = {};
+  var saved = localStorage.getItem('myplanner_events');
+  if (saved) {
+    events = JSON.parse(saved);
+  }
+
+  function saveToStorage() {
+    localStorage.setItem('myplanner_events', JSON.stringify(events));
+  }
+
+  var holidays = {};
+
+  // get public holidays from the api
+  function loadHolidays() {
+    var year = monday.getFullYear();
+    var url = 'https://date.nager.at/api/v3/PublicHolidays/' + year + '/US';
+
+    fetch(url).then(function(res) {
+      return res.json();
+    }).then(function(data) {
+      for (var i = 0; i < data.length; i++) {
+        holidays[data[i].date] = data[i].localName;
+      }
+      document.getElementById('holidayStatus').textContent = '✦ Holidays loaded';
+      document.getElementById('holidayStatus').className = 'holiday-status loaded';
+      buildGrid();
+    });
+  }
+
+  // build the 7 day columns
+  function buildGrid() {
+    var grid = document.getElementById('weekGrid');
+    var todayKey = dateKey(new Date());
+
+    // set the header week range text
+    var firstDay = new Date(monday);
+    var lastDay = new Date(monday);
+    lastDay.setDate(lastDay.getDate() + 6);
+    document.getElementById('weekLabel').textContent =
+      firstDay.getDate() + ' ' + MONTHS[firstDay.getMonth()] + ' – ' +
+      lastDay.getDate() + ' ' + MONTHS[lastDay.getMonth()] + ' ' + lastDay.getFullYear();
+
+    grid.innerHTML = '';
+
+    for (var i = 0; i < 7; i++) {
+      var date = new Date(monday);
+      date.setDate(monday.getDate() + i);
+      var dk = dateKey(date);
+
+      var col = document.createElement('div');
+      col.className = 'day-col';
+      if (dk == todayKey) col.className += ' today';
+
+      // day header
+      var header = document.createElement('div');
+      header.className = 'day-header';
+      header.innerHTML =
+        '<div class="day-name">' + DAYS[i].slice(0,3) + '</div>' +
+        '<div class="day-date">' + String(date.getDate()).padStart(2,'0') + '</div>';
+      col.appendChild(header);
+
+      var slotList = document.createElement('div');
+      slotList.className = 'slot-list';
+
+      // shows holiday if there is one
+      if (holidays[dk]) {
+        var hEl = document.createElement('div');
+        hEl.className = 'slot-event holiday';
+        hEl.innerHTML = '<span class="event-label">' + holidays[dk] + '</span><span class="event-meta">Public Holiday</span>';
+        slotList.appendChild(hEl);
+      }
+
+      // show user events for current day
+      for (var key in events) {
+        if (key.indexOf(dk + ':') == 0) {
+          var ev = events[key];
+          var btn = document.createElement('button');
+          btn.className = 'slot-event user-event';
+
+          // closure here so the key variable doesnt get messed up in the loop
+          (function(k, title) {
+            btn.innerHTML = '<span class="event-label">' + title + '</span>';
+            btn.onclick = function() { openDeleteModal(k, title); };
+          })(key, ev.title);
+
+          slotList.appendChild(btn);
+        }
+      }
+
+      // add button at the bottom
+      var addBtn = document.createElement('button');
+      addBtn.className = 'btn-add-day';
+      addBtn.textContent = '+ add';
+      (function(d, dayName, dateObj) {
+        addBtn.onclick = function() { openAddModal(d, dayName, dateObj); };
+      })(dk, DAYS[i], date);
+      slotList.appendChild(addBtn);
+      col.appendChild(slotList);
+      grid.appendChild(col);
+    }
+  }
+
+  // ADD MODAL
+  var currentDay = null;
+
+  function openAddModal(dk, dayName, dateObj) {
+    currentDay = { dk: dk, dayName: dayName, dateObj: dateObj };
+    document.getElementById('addModalDay').textContent = dayName + ' · ' + formatShort(dateObj);
+    document.getElementById('eventInput').value = '';
+    document.getElementById('addModal').classList.add('open');
+    document.getElementById('eventInput').focus();
+  }
+
+  function closeAddModal() {
+    document.getElementById('addModal').classList.remove('open');
+    currentDay = null;
+  }
+
+  function saveEvent() {
+    var title = document.getElementById('eventInput').value.trim();
+    if (!title) return;
+    if (!currentDay) return;
+
+    // use timestamp so keys are unique
+    var key = currentDay.dk + ':' + Date.now();
+    events[key] = { title: title };
+    saveToStorage();
+    closeAddModal();
+    buildGrid();
+  }
+
+  document.getElementById('addSaveBtn').onclick = saveEvent;
+  document.getElementById('addCancelBtn').onclick = closeAddModal;
+
+  document.getElementById('eventInput').addEventListener('keydown', function(e) {
+    if (e.key == 'Enter') saveEvent();
+    if (e.key == 'Escape') closeAddModal();
+  });
+
+  document.getElementById('addModal').onclick = function(e) {
+    if (e.target == this) closeAddModal();
+  };
+
+  // DELETE MODAL
+  var deleteKey = null;
+
+  function openDeleteModal(key, title) {
+    deleteKey = key;
+    document.getElementById('deleteEventName').textContent = title;
+    document.getElementById('deleteModal').classList.add('open');
+  }
+
+  function closeDeleteModal() {
+    document.getElementById('deleteModal').classList.remove('open');
+    deleteKey = null;
+  }
+
+  function doDelete() {
+    if (!deleteKey) return;
+    delete events[deleteKey];
+    saveToStorage();
+    closeDeleteModal();
+    buildGrid();
+  }
+
+  document.getElementById('deleteConfirmBtn').onclick = doDelete;
+  document.getElementById('deleteCancelBtn').onclick = closeDeleteModal;
+
+  document.getElementById('deleteModal').onclick = function(e) {
+    if (e.target == this) closeDeleteModal();
+  };
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key == 'Escape') {
+      closeAddModal();
+      closeDeleteModal();
+    }
+  });
+
+
+  buildGrid();
+  loadHolidays();
+</script>
+</body>
+</html>
