@@ -4,7 +4,7 @@ A minimal weekly planner that automatically displays public holidays and only sh
 
 How to Run:
 
-Download both planner.html and styles.css into the same folder
+Download both index.html and styles.css into the same folder
 Open index.html in web browser
 
 
